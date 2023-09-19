@@ -1,0 +1,210 @@
+
+    body {
+        margin: 0;
+        font-family: Gantari, 'Open Sans', Helvetica, sans-serif;
+        background-color: #1E1E28;
+        color: #f0f0f0;
+    }
+    
+    .image-popup {
+        display: none;
+        position: fixed;
+        width: 100%;
+        height: 100%;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        transition: 0.2s;
+        justify-content: center;
+        align-items: center;
+        flex-wrap: wrap;
+        color: white;
+        font-size: 24px;
+        z-index: 69;
+    }
+    .image-popup.image-popup-open {
+        display: flex;
+    }
+    .image-popup-bg {
+        width: 100%;
+        height: 100%;
+    }
+    .image-popup-open > .image-popup-bg {
+        background: rgba(0,0,0,0.6);
+    }
+    .image-popup-open > .content {
+        filter: blur(100px);
+    }
+    .image-popup-img {
+        position: fixed;
+        max-width: 90%;
+        max-height: 90%;
+        border-radius: 10px;
+        box-shadow: 0 4px 5px rgba(50,50,50,0.9);
+    }
+    #image-popup-cate {
+        position: fixed;
+        bottom: 20px;
+    }
+    .image-popup-opener {
+        cursor: pointer;
+        transition: 0.2s;
+    }
+    .image-popup-opener:hover {
+        transform: scale(1.1);
+    }
+    
+    .header {
+        display: flex;
+        justify-content: space-between;
+        background: transparent;
+        position: fixed;
+        top: 0;
+        width: 100%;
+        padding: 20px;
+        z-index: 32;
+        transition: 0.3s;
+        backdrop-filter: blur(5px);
+        color: #F03232;
+    }
+    .header-right {
+        margin-right: 40px;
+    }
+    .header.sticky {
+        background: rgba(0,0,0,0.35);
+        color: white;
+    }
+    
+    .header-item {
+        margin: 1px;
+        font-size: 20px;
+        font-weight: 500;
+        color: inherit;
+        margin-right: 50px;
+    }
+    .header-item:hover {
+        color: white;
+        background-color: rgba(0,0,0,0.1);
+        border-radius: 5px;
+    }
+    .header-title {
+        font-weight: 700;
+        color: inherit;
+    }
+    
+    .splosh-content-wrapper {
+        background: #F03232;
+        padding: 20px;
+        padding-top: 80px;
+        display: flex;
+        justify-content: center;
+        align-content: center;
+        color: white;
+    }
+    .splosh-content {
+        max-width: 800px;
+        width: 100%;
+        text-align: center;
+    }
+    .splosh-title {
+        margin: 20px;
+        font-size: 56px;
+    }
+    
+    .splosh-waves-path {
+        fill: #F03232;
+    }
+    
+    .button {
+        display: inline-block;
+        margin: 10px;
+        padding: 10px 15px 10px 15px;
+        text-decoration: none;
+        border-width: 2px;
+        border-style: solid;
+        border-color: rgba(0,0,0,0.5);
+        border-radius: 10px;
+        background-color: rgba(0,0,0,0.25);
+        color: white;
+        transition: 0.2s;
+    }
+    .button:hover {
+        transform: translateY(-2px);
+        background-color: rgba(255,255,255,0.25);
+        color: black;
+    }
+    
+    .summary {
+        display: flex;
+        justify-content: center;
+    }
+    .summary-content {
+        max-width: 800px;
+        width: 100%;
+    }
+    .summary-item {
+        padding: 15px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
+    .summary-item-image {
+        max-width: 40%;
+        height:auto;
+        border-radius: 5px;
+    }
+    @media only screen and (max-width: 700px) {
+        .summary-item {
+            flex-wrap: wrap;
+            max-width: 90%;
+            max-height: none;
+        }
+        .summary-item-image {
+            max-width: 90%;
+        }
+    }
+    .summary-item-caption {
+        display: grid;
+        margin: 15px;
+        margin-left: 20px;
+        width: 100%;
+    }
+    .summary-item-title {
+        margin: 5px;
+        font-size: 32px;
+        font-weight: 600;
+    }
+    .summary-item-desc {
+        margin: 5px;
+        font-size: 20px;
+        width: 100%;
+    }
+    #downloads {
+        margin-top: 25px;
+        display: flex;
+        justify-content: center;
+        background: #F03232;
+    }
+    .downloads-content {
+        max-width: 800px;
+        margin: 0;
+        padding: 20px;
+        color: white;
+        font-size: 24px;
+    }
+    .downloads-title {
+        text-align: center;
+        margin: 0;
+        color: #1E1E28;
+    }
+    .downloads-desc {
+        text-align: center;
+    }
+    .downloads-link {
+        color: #1E1E28;
+    }
+    .downloads-link:hover{
+        background: rgba(0,0, 0, 0);
+    }
+    
