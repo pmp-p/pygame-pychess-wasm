@@ -1,4 +1,4 @@
-import asyncio
+import pygbag.aio as asyncio
 import pygame
 import sys
 from src.const import *
