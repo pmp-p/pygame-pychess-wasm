@@ -6,12 +6,18 @@ from src.game import Game
 from src.square import Square
 from src.move import Move
 
+pygame.init()
+import pygame.freetype
+pygame.font.init()
+pygame.freetype.init()
+
+
 
 class Main:
 
     def __init__(self):
-        pygame.init()
-        self.screen = pygame.display.set_mode( (WIDTH, HEIGHT), pygame.NOFRAME)
+        #self.screen = pygame.display.set_mode( (WIDTH, HEIGHT), pygame.NOFRAME)
+        self.screen = pygame.display.set_mode( (WIDTH, HEIGHT), 0)
         pygame.display.set_caption('Chess')
         self.game = Game()
 
