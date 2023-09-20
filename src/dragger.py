@@ -23,7 +23,7 @@ class Dragger:
         if texture != self.texture:
             self.img = pygame.image.load(texture)
             self.texture = texture
-            print(texture)
+            #node.out("dragging",texture)
         # rect
         img_center = (self.mouseX, self.mouseY)
         self.piece.texture_rect = self.img.get_rect(center=img_center)

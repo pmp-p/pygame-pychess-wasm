@@ -1,9 +1,13 @@
+import json
 class Move:
 
     def __init__(self, initial, final):
         # initial and final are squares
         self.initial = initial
         self.final = final
+
+    def export(self):
+        return { "from" : (self.initial.col,self.initial.row), "to" : (self.final.col,self.final.row), }
 
     def __str__(self):
         s = ''

@@ -28,4 +28,4 @@ class Config:
         orange = Theme('#FFAF82','#E65000','#64F0FF','#00DCF0','#F03232','#FAAAAA')
         yellow = Theme('#FFEB9B','#D2A500','#64F0FF','#00DCF0','#F03232','#FAAAAA')
         purple = Theme('#DCCDFF','#551EFF','#64F0FF','#00DCF0','#F03232','#FAAAAA')
-        self.themes = [black, green, orange,yellow, purple]
+        self.themes = [green, black, orange,yellow, purple]
