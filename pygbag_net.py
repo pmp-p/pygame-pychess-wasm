@@ -109,29 +109,73 @@ class aio_sock:
 
 
 class Node:
-    CONNECTED = 0
-    RX = 1
-    PING = 2
-    PONG = 3
-    RAW = 4
-    LOBBY = 5
-    GAME = 6
-    B64JSON = "b64json"
+    CONNECTED = "a"
+    RX = "b"
+    PING = "c"
+    PONG = "d"
+    RAW = "e"
+    LOBBY = "f"
+    HELLO = "g"
+    OFFER = "h"
+    USERS = "i"
+    SPURIOUS = "j"
+
+    GLOBAL = "k"
+    USERLIST = "l"
+    JOINED = "m"
+    TOPIC = "o"
+    LOBBY_GAME = "p"
+    GAME = "q"
+    CMD = "cmd"
+    PID = "pid"
+    B64JSON = "j64"
 
     host = "://pmp-p.ddns.net/wss/6667:443"
     lobby = "#pygbag"
+    lobby_channel = f"{lobby}-0"
+    lobby_topic = "Welcome to Pygbag lobby [hosted by pmp-p]"
 
     events = []
 
-    def __init__(self, gid=0, host="", offline=False):
+    # initial process is pygbag lobby chat.
+    gid = 0
+    groupname = "Lobby"
+
+    pstree = {}
+
+    def __init__(self, gid=0, groupname="", host="", offline=False):
         self.aiosock = None
-        self.gid = gid
+
+        self.gid = gid or self.gid
+        self.groupname = groupname or self.groupname
+
+        self.users = {}
+
         self.rxq = []
         self.txq = []
         self.offline = offline
         self.alarm_set = 0
+
+        # last joined channel
+        self.joined = ""
+
+        # topics bookeeping
+        self.channel = self.lobby_channel
+        self.topics = {}
+
         if not offline:
             aio.create_task(self.connect(host or self.host))
+
+        # if there's no chanserv, then first arrived will have to do it
+        self.topic_todo = []
+
+        # game host is root
+        self.uid = 0
+
+        # no game running on start
+        self.pid = 0
+
+        self.fork = -1
 
     async def connect(self, host):
         self.peek = []
@@ -140,6 +184,7 @@ class Node:
             self.events.append(self.CONNECTED)
             self.aiosock = sock
             self.alarm()
+
             while not aio.exit:
                 rr, rw, re = select.select([sock.socket], [], [], 0)
                 if rr or rw or re:
@@ -159,6 +204,8 @@ class Node:
                             else:
                                 # lost con.
                                 print("HANGUP", self.peek)
+                                self.aiosock = None
+                                print("TODO: ask for reconnect")
                                 return
                         except BlockingIOError as e:
                             if e.errno == 6:
@@ -170,6 +217,23 @@ class Node:
     # default for data is speak into lobby with gameid>0
     def tx(self, obj):
         ser = json.dumps(obj)
+        if self.fork < 0:
+            self.fork = 0
+
+            self.wire(f"JOIN #pygbag-{self.gid}")
+
+            self.topic_todo.append([f"#pygbag-{self.gid}", self.groupname.replace(" ", "_")])
+
+            self.lobby_cmd(
+                self.gid,
+                self.pid,
+                self.OFFER,
+                self.groupname,
+                hint=f" {self.lobby}-{self.gid} : Game offer {self.groupname=} started with {self.pid=}",
+            )
+
+        self.pstree[self.pid].append(ser)
+
         self.out(self.B64JSON + ":" + base64.b64encode(ser.encode("ascii")).decode("utf-8"), gid=self.gid)
 
     def lobby_cmd(self, *cmd, hint=""):
@@ -185,8 +249,10 @@ class Node:
     def out(self, *blocks, gid=-1):
         if gid < 0:
             gid = 0
-
-        self.wire(f"PRIVMSG {self.lobby} :{gid}:{' '.join(map(str, blocks))}")
+        if gid:
+            self.wire(f"PRIVMSG {self.lobby}-{gid} :{self.fork}:{self.pid}:{' '.join(map(str, blocks))}")
+        else:
+            self.wire(f"PRIVMSG {self.lobby_channel} :{' '.join(map(str, blocks))}")
 
     # TODO: handle hangup/reconnect nicely (no flood)
     def wire(self, rawcmd):
@@ -194,7 +260,7 @@ class Node:
             print("WIRE:", rawcmd)
         else:
             self.txq.append(rawcmd)
-            if self.aiosock:
+            if self.aiosock and self.aiosock.socket:
                 while len(self.txq):
                     self.aiosock.print(self.txq.pop(0))
 
@@ -203,56 +269,179 @@ class Node:
         self.aiosock.socket.close()
         self.aiosock = None
 
-    def process_data(self, line):
-        if line.find(" PONG ") >= 0:
-            self.proto, self.data = line.split(" PONG ")
+    def check_topic(self):
+        if self.joined != self.lobby_channel:
+            return False
+
+        if not self.topics[self.lobby_channel]:
+            todo = [self.lobby_channel, self.lobby_topic.replace(" ", "_")]
+            self.topic_todo.append(todo)
+
+    # motd join userlist ping pong
+
+    def process_server(self, cmd, line):
+        self.discarded = False
+
+        if cmd.find(f" 331 ") > 0:
+            if line == "No topic is set":
+                self.topics[self.joined] = ""
+                self.check_topic()
+                return self.discard()
+
+            print("267: topic noise", line)
+            return self.discard()
+
+        if cmd.find(f" 332 ") > 0:
+            # print(f"\n332: {cmd=} {line=}")
+            self.proto = "topic"
+            self.joined = cmd.strip().rsplit(" ", 1)[-1]
+            self.topics[self.joined] = line.strip()
+            self.check_topic()
+            self.channel = self.joined
+            yield self.TOPIC
+            return self.discard()
+
+        # TODO clear userlist on JOIN
+        if cmd.find(" 353 ") > 0:
+            self.proto = "users"
+            self.data = line.split(" ")
+            for u in self.data:
+                if not u in self.users:
+                    self.users.setdefault(u, {})
+
+            yield self.USERS
+            return self.discard()
+
+        if cmd.find(" 366 ") > 0:
+            self.check_topic()
+            todel = []
+            for idx, todo in enumerate(self.topic_todo):
+                if self.joined == todo[0]:
+                    if not self.topics[self.joined]:
+                        send = f"TOPIC {todo[0]} {todo[1]}"
+                        print("sent topic:", send)
+                        self.wire(send)
+                    todel.append(idx)
+            while len(todel):
+                self.topic_todo.pop(todel.pop())
+
+            yield self.USERLIST
+            return self.discard()
+
+        if cmd.find(" JOIN #") > 0:
+            self.proto = "join"
+            self.joined = cmd.split(" JOIN ")[-1]
+            self.data = self.joined
+
+            yield self.JOINED
+            return self.discard()
+
+        if cmd.find(" TOPIC ") > 0:
+            _, self.channel = cmd.strip().split(" TOPIC ", 1)
+            self.topics[self.channel] = line.strip()
+            yield self.TOPIC
+            return self.discard()
+
+        if cmd.find(" PONG ") > 0:
+            self.proto, self.data = cmd.strip().split(" PONG ", 1)
             yield self.PONG
-            return
+            return self.discard()
 
-        if line.find("PING :") >= 0:
-            self.proto, self.data = line.split(":", 1)
-            self.wire(line.replace("PING :", "PONG :"))
+        for srv in "001 002 003 004 251 375 372 376".split(" "):
+            if cmd.find(f" {srv} ") > 0:
+                self.proto = cmd
+                self.data = line.strip()
+                yield self.GLOBAL
+                return self.discard()
+
+        if cmd.find("PING ") >= 0:
+            print("348: PING ?")
+            self.proto, self.data = cmd.strip().split(":", 1)
+            self.wire(line.replace("PING ", "PONG ", 1))
             yield self.PING
-            return
+            return self.discard()
 
-        room = f" {self.lobby} :"
+    # handle Lobby commands : game offer, lobby chat
 
-        self.proto = ""
-
-        if line.find(room) > 0:
-            self.proto, data = line.split(room, 1)
-            game = f"{self.gid}:"
-
-            if data.startswith(game):
-                b64json = f"{self.B64JSON}:"
-                data = data[len(game) :]
-                if data.startswith(b64json):
-                    data = data[len(b64json) :]
-                    data = base64.b64decode(data.encode())
-                try:
-                    self.proto = "json"
-                    self.data = json.loads(data.decode())
-                except:
-                    self.proto = "?"
-                    self.data = data
-
-                yield self.GAME
-            else:
-                self.data = data
-                yield self.LOBBY
-
-            return
+    def process_lobby(self, cmd, line):
+        self.discarded = False
 
         maybe_hint = line.rsplit("§", 1)
 
         if len(maybe_hint) > 1:
             self.hint = maybe_hint[-1]
             print("HINT", maybe_hint[-1])
+            line = maybe_hint[0]
         else:
             self.hint = ""
 
+        room = f" {self.lobby_channel} "
+        if cmd.endswith(room):
+            try:
+                nick = cmd.split("!", 1)[0]
+                gid, pid, proto, info = line.split(":", 3)
+
+                # that's our game
+                if gid == str(self.gid):
+                    self.proto = [proto, pid, nick, info]
+                    self.data = line
+                    yield self.LOBBY_GAME
+                    return self.discard()
+
+                # or still see others
+                yield self.LOBBY
+            except:
+                self.proto = cmd
+                self.data = line
+                yield self.SPURIOUS
+
+            return self.discard()
+
+    # handle game fork / game logic
+    def process_game(self, cmd, line):
+        self.discarded = False
+        room = f" {self.lobby}-{self.gid} "
+
+        self.proto = cmd
         self.data = line
-        yield self.RAW
+        if cmd.endswith(room):
+            game = f"{self.fork or self.pid}:"
+
+            if self.fork:
+                self.proto = "fork"
+            else:
+                self.proto = "main"
+
+            print(f"i'm {self.nick} {self.proto} filtering on", game)
+
+            if line.startswith(game):
+                b64json = f"{self.B64JSON}:"
+                data = line[len(game) :]
+
+                try:
+                    if data.startswith(b64json):
+                        data = data[len(b64json) :]
+                        data = base64.b64decode(data.encode())
+                        self.data = json.loads(data.decode())
+                        yield self.GAME
+                        return self.discard()
+
+                except Exception as e:
+                    sys.print_exception(e)
+
+            # uncompatible fork and not PR.
+            else:
+                self.proto = "noise"
+
+        yield self.SPURIOUS
+        return self.discard()
+
+    def sync_to(self, ppid):
+        self.fork = int(ppid)
+        self.tx({node.CMD: "clone", node.PID: self.pid, "main": self.fork})
+
+    def discard(self):
+        self.discarded = True
 
     def alarm(self):
         t = time.time()
@@ -270,22 +459,51 @@ class Node:
 
         while len(self.events):
             ev = self.events.pop(0)
+
             if ev == self.RX:
                 while len(self.rxq):
-                    data = self.rxq.pop(0).decode("utf-8").strip()
-                    yield from self.process_data(data)
+                    srvdata = self.rxq.pop(0).decode("utf-8").strip().split(":", 2)
+                    noise = srvdata.pop(0)
+                    if noise:
+                        print(f"364: server {noise=} on rxq, remaining {srvdata=}")
+
+                    if len(srvdata) < 2:
+                        srvdata.append("")
+
+                    yield from self.process_server(*srvdata)
+
+                    if not self.discarded:
+                        yield from self.process_lobby(*srvdata)
+
+                    if not self.discarded:
+                        yield from self.process_game(*srvdata)
+
+                    if not self.discarded:
+                        self.data = ":".join(srvdata)
+                        yield self.RAW
                 continue
 
-            elif ev == self.CONNECTED:
-                nick = "pygamer_" + str(time.time())[-5:].replace(".", "")
-                d = {"nick": nick, "channel": self.lobby}
+            if ev == self.CONNECTED:
+                # attribute a pseudo random pid to network agent, use that for uid nickname
+                # not foolproof should use a service for that
+                stime = str(time.time())[-5:].replace(".", "")
+                self.pid = int(stime)
+                self.pstree.setdefault(self.pid, [])
+
+                self.nick = "pygamer_" + str(self.pid)
+                nick = self.nick
+
+                # TODO: maybe do not list as channels members people who don't want to chat
+                # that still allow to send game start info to lobby when no channel mode enforced
+
+                d = {"nick": nick, "channel": self.lobby_channel}
+
                 self.aiosock.print(
                     """CAP LS\r\nNICK {nick}\r\nUSER {nick} {nick} localhost :wsocket\r\nJOIN {channel}""".format(**d)
                 )
-                self.lobby_cmd(self.CONNECTED, hint="CONNECTED")
-
+                self.lobby_cmd(self.gid, self.pid, self.HELLO, self.nick, hint=f"Hi from {self.nick}")
             else:
-                print(f"? {ev=}")
+                print(f"402:? {ev=} {self.rxq=}")
 
             yield ev
 

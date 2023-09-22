@@ -15,17 +15,20 @@ import pygbag_net
 
 
 class Node(pygbag_net.Node):
+    #    gid = 666
+    #    groupname = "Chess"
+
     ...
 
 
-builtins.node = Node(gid=666, offline="offline" in sys.argv)
+builtins.node = Node(gid=666, groupname="Simple Chess Board with spectators", offline="offline" in sys.argv)
 
 
 class Main:
     def __init__(self):
         # self.screen = pygame.display.set_mode( (WIDTH, HEIGHT), pygame.NOFRAME)
         self.screen = pygame.display.set_mode((WIDTH, HEIGHT), 0)
-        pygame.display.set_caption("Chess")
+        pygame.display.set_caption(node.groupname)
         self.game = Game()
 
     def make_move(self, piece, move, dragger=None):
@@ -42,7 +45,8 @@ class Main:
             captured = board.squares[released_row][released_col].has_piece()
 
             # transmit to hub
-            txdata = move.export()
+            txdata = {node.CMD: "move"}
+            txdata.update(move.export())
             txdata["color"] = piece.color
             node.tx(txdata)
 
@@ -68,27 +72,78 @@ class Main:
 
         while True:
             for ev in node.get_events():
-                if ev == node.LOBBY:
-                    print("LOBBY:", node.data)
-                elif ev == node.GAME:
-                    print("GAME:", node.proto, node.data)
+                try:
+                    if ev == node.GAME:
+                        print("GAME:", node.proto, node.data)
+                        cmd = node.data[node.CMD]
+                        if cmd == "move":
+                            grid_from, grid_to = node.data.pop("from"), node.data.pop("to")
+                            gfrom = Square(grid_from[1], grid_from[0])
+                            gto = Square(grid_to[1], grid_to[0])
+                            piece = board.squares[gfrom.row][gfrom.col].piece
+                            self.make_move(piece, Move(gfrom, gto), dragger=None)
+                        elif cmd == "ingame":
+                            print("TODO: join game")
+                        else:
+                            print("87 ?", node.data)
 
-                    grid_from, grid_to = node.data.pop("from"), node.data.pop("to")
-                    gfrom = Square(grid_from[1], grid_from[0])
-                    gto = Square(grid_to[1], grid_to[0])
-                    piece = board.squares[gfrom.row][gfrom.col].piece
-                    self.make_move(piece, Move(gfrom, gto), dragger=None)
+                    elif ev == node.CONNECTED:
+                        print(f"CONNECTED as {node.nick}")
 
-                elif ev == node.RAW:
-                    print("RAW:", node.data)
-                elif ev == node.PING:
-                    print("ping", node.data)
-                elif ev == node.PONG:
-                    print("pong", node.data)
-                elif ev == node.RX:
-                    ...
-                else:
-                    print(f"52:{ev=} {node.rxq=}")
+                    elif ev == node.JOINED:
+                        print("Entered channel", node.joined)
+                        if node.joined == node.lobby_channel:
+                            node.tx({node.CMD: "ingame", node.PID: node.pid})
+
+                    elif ev == node.TOPIC:
+                        print(f'[{node.channel}] TOPIC "{node.topics[node.channel]}"')
+
+                    elif ev in [node.LOBBY, node.LOBBY_GAME]:
+                        cmd, pid, nick, info = node.proto
+
+                        if cmd == node.HELLO:
+                            print("Lobby/Game:", "Welcome", nick)
+
+                        elif (ev == node.LOBBY_GAME) and (cmd == node.OFFER):
+                            if not node.fork:
+                                print("forking to game offer", node.hint)
+                                node.sync_to(pid)
+                            else:
+                                print("cannot fork, already forked pid=", node.fork)
+                        else:
+                            print(f"\nLOBBY/GAME: {node.fork=} {node.proto=} {node.data=} {node.hint=}")
+
+                    elif ev in [node.USERS]:
+                        ...
+
+                    elif ev in [node.GLOBAL]:
+                        print("GLOBAL:", node.data)
+
+                    elif ev in [node.SPURIOUS]:
+                        print(f"\nRAW: {node.proto=} {node.data=}")
+
+                    elif ev in [node.USERLIST]:
+                        print(node.proto, node.users)
+
+                    elif ev == node.RAW:
+                        print("RAW:", node.data)
+
+                    elif ev == node.PING:
+                        # print("ping", node.data)
+                        ...
+                    elif ev == node.PONG:
+                        # print("pong", node.data)
+                        ...
+
+                    # promisc mode dumps everything.
+                    elif ev == node.RX:
+                        ...
+
+                    else:
+                        print(f"52:{ev=} {node.rxq=}")
+                except Exception as e:
+                    print(f"52:{ev=} {node.rxq=} {node.proto=} {node.data=}")
+                    sys.print_exception(e)
 
             # show methods
             game.show_bg(screen)
