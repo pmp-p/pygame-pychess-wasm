@@ -126,6 +126,7 @@ class Node:
     TOPIC = "o"
     LOBBY_GAME = "p"
     GAME = "q"
+    SYNC = "r"
     CMD = "cmd"
     PID = "pid"
     B64JSON = "j64"
@@ -175,6 +176,7 @@ class Node:
         # no game running on start
         self.pid = 0
 
+        # default is take over channel (operator)
         self.fork = -1
 
     async def connect(self, host):
@@ -214,27 +216,40 @@ class Node:
                     await aio.sleep(0)
             sock.print("DISCONNECT")
 
+    def publish(self):
+        self.lobby_cmd(
+            self.gid,
+            self.pid,
+            self.OFFER,
+            self.groupname,
+            hint=f" {self.lobby}-{self.gid} : Game offer {self.groupname=} started with {self.pid=}",
+        )
+
     # default for data is speak into lobby with gameid>0
-    def tx(self, obj):
+    def tx(self, obj, mem=False, shm=False):
         ser = json.dumps(obj)
+
         if self.fork < 0:
             self.fork = 0
-
             self.wire(f"JOIN #pygbag-{self.gid}")
-
             self.topic_todo.append([f"#pygbag-{self.gid}", self.groupname.replace(" ", "_")])
 
-            self.lobby_cmd(
-                self.gid,
-                self.pid,
-                self.OFFER,
-                self.groupname,
-                hint=f" {self.lobby}-{self.gid} : Game offer {self.groupname=} started with {self.pid=}",
-            )
+        # autopublish is broken
+        #            self.publish()
 
-        self.pstree[self.pid].append(ser)
+        if mem:
+            self.pstree[self.pid]["mem"].append(ser)
+        if shm:
+            self.pstree[self.pid]["shm"].append(ser)
 
         self.out(self.B64JSON + ":" + base64.b64encode(ser.encode("ascii")).decode("utf-8"), gid=self.gid)
+
+    def pscheck(self, pid, nick):
+        self.pstree.setdefault(int(pid), {"nick": nick, "mem": [], "shm": [], "rev": 0, "forks": []})
+
+    def privmsg(self, cpid, data):
+        nick = self.pstree[cpid]["nick"]
+        self.wire(f"PRIVMSG {nick} :{data}")
 
     def lobby_cmd(self, *cmd, hint=""):
         data = ":".join(map(str, cmd))
@@ -292,7 +307,6 @@ class Node:
             return self.discard()
 
         if cmd.find(f" 332 ") > 0:
-            # print(f"\n332: {cmd=} {line=}")
             self.proto = "topic"
             self.joined = cmd.strip().rsplit(" ", 1)[-1]
             self.topics[self.joined] = line.strip()
@@ -380,10 +394,11 @@ class Node:
             try:
                 nick = cmd.split("!", 1)[0]
                 gid, pid, proto, info = line.split(":", 3)
+                node.pstree.setdefault(int(pid), {"nick": nick, "mem": [], "shm": [], "rev": 0})
 
                 # that's our game
                 if gid == str(self.gid):
-                    self.proto = [proto, pid, nick, info]
+                    self.proto = [proto, int(pid), nick, info]
                     self.data = line
                     yield self.LOBBY_GAME
                     return self.discard()
@@ -400,6 +415,23 @@ class Node:
     # handle game fork / game logic
     def process_game(self, cmd, line):
         self.discarded = False
+        privmsg = f" {self.nick} "
+
+        # TODO route msg or game
+        if cmd.endswith(privmsg):
+            if line.startswith(f"{node.B64JSON}:"):
+                try:
+                    _, data = line.split(":", 1)
+                    data = base64.b64decode(data.encode())
+                    self.data = json.loads(data.decode())
+                    yield self.GAME
+                    return self.discard()
+
+                except Exception as e:
+                    sys.print_exception(e)
+            print("PRIV ?:", cmd, line)
+            return self.discard()
+
         room = f" {self.lobby}-{self.gid} "
 
         self.proto = cmd
@@ -409,18 +441,35 @@ class Node:
 
             if self.fork:
                 self.proto = "fork"
+                if line.startswith("0:"):
+                    _, pid, msgtype, data = line.split(":", 3)
+
+                    # ND rpid could be different from payload pid in case of message relaying
+                    # on a mesh.
+                    # rpid = int(pid)
+                    try:
+                        if msgtype == node.B64JSON:
+                            data = base64.b64decode(data.encode())
+                            self.data = json.loads(data.decode())
+                            yield self.SYNC
+                            return self.discard()
+
+                    except Exception as e:
+                        sys.print_exception(e)
+
             else:
                 self.proto = "main"
 
-            print(f"i'm {self.nick} {self.proto} filtering on", game)
+            # print(f"i am {self.nick}({self.proto}) filtering on {game=} {line=}")
 
             if line.startswith(game):
-                b64json = f"{self.B64JSON}:"
-                data = line[len(game) :]
+                _, pid, msgtype, data = line.split(":", 3)
 
+                # ND rpid could be different from payload pid in case of message relaying
+                # on a mesh.
+                # rpid = int(pid)
                 try:
-                    if data.startswith(b64json):
-                        data = data[len(b64json) :]
+                    if msgtype == node.B64JSON:
                         data = base64.b64decode(data.encode())
                         self.data = json.loads(data.decode())
                         yield self.GAME
@@ -436,9 +485,27 @@ class Node:
         yield self.SPURIOUS
         return self.discard()
 
-    def sync_to(self, ppid):
+    # push a pull, as a response to a clone demand
+    def checkout_for(self, n_data):
+        cpid = int(n_data[node.PID])
+        self.pscheck(cpid, n_data["nick"])
+
+        current = self.pstree[cpid].get("rev", 0)
+
+        # register new fork
+        if not current:
+            self.pstree[self.pid]["forks"].append(cpid)
+
+        # TODO send expected rev number before flooding
+        # TODO use a task to avoid flood
+        for idx, ser in enumerate(self.pstree[self.pid]["shm"], current):
+            self.privmsg(cpid, self.B64JSON + ":" + base64.b64encode(ser.encode("ascii")).decode("utf-8"))
+            node.pstree[cpid]["rev"] = idx
+
+    # TODO invalidate fork try on timeout
+    def clone(self, ppid):
         self.fork = int(ppid)
-        self.tx({node.CMD: "clone", node.PID: self.pid, "main": self.fork})
+        self.tx({node.CMD: "clone", node.PID: self.pid, "main": self.fork, "nick": self.nick})
 
     def discard(self):
         self.discarded = True
@@ -488,15 +555,13 @@ class Node:
                 # not foolproof should use a service for that
                 stime = str(time.time())[-5:].replace(".", "")
                 self.pid = int(stime)
-                self.pstree.setdefault(self.pid, [])
-
-                self.nick = "pygamer_" + str(self.pid)
-                nick = self.nick
+                self.nick = "u_" + str(self.pid)
+                self.pscheck(self.pid, self.nick)
 
                 # TODO: maybe do not list as channels members people who don't want to chat
                 # that still allow to send game start info to lobby when no channel mode enforced
 
-                d = {"nick": nick, "channel": self.lobby_channel}
+                d = {"nick": self.nick, "channel": self.lobby_channel}
 
                 self.aiosock.print(
                     """CAP LS\r\nNICK {nick}\r\nUSER {nick} {nick} localhost :wsocket\r\nJOIN {channel}""".format(**d)

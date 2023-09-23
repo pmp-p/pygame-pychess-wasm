@@ -19,7 +19,7 @@ class Game:
 
     def show_bg(self, surface):
         theme = self.config.theme
-        
+
         for row in range(ROWS):
             for col in range(COLS):
                 # color
@@ -55,7 +55,7 @@ class Game:
                 # piece ?
                 if self.board.squares[row][col].has_piece():
                     piece = self.board.squares[row][col].piece
-                    
+
                     # all pieces except dragger piece
                     if piece is not self.dragger.piece:
                         piece.set_texture(size=80)

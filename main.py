@@ -48,7 +48,7 @@ class Main:
             txdata = {node.CMD: "move"}
             txdata.update(move.export())
             txdata["color"] = piece.color
-            node.tx(txdata)
+            node.tx(txdata, shm=True)
 
         board.move(piece, move)
 
@@ -73,8 +73,8 @@ class Main:
         while True:
             for ev in node.get_events():
                 try:
-                    if ev == node.GAME:
-                        print("GAME:", node.proto, node.data)
+                    if ev == node.SYNC:
+                        print("SYNC:", node.proto, node.data)
                         cmd = node.data[node.CMD]
                         if cmd == "move":
                             grid_from, grid_to = node.data.pop("from"), node.data.pop("to")
@@ -82,6 +82,22 @@ class Main:
                             gto = Square(grid_to[1], grid_to[0])
                             piece = board.squares[gfrom.row][gfrom.col].piece
                             self.make_move(piece, Move(gfrom, gto), dragger=None)
+
+                    elif ev == node.GAME:
+                        print("GAME:", node.proto, node.data)
+                        cmd = node.data[node.CMD]
+
+                        if cmd == "move":
+                            grid_from, grid_to = node.data.pop("from"), node.data.pop("to")
+                            gfrom = Square(grid_from[1], grid_from[0])
+                            gto = Square(grid_to[1], grid_to[0])
+                            piece = board.squares[gfrom.row][gfrom.col].piece
+                            self.make_move(piece, Move(gfrom, gto), dragger=None)
+
+                        elif cmd == "clone":
+                            # send all history to child
+                            node.checkout_for(node.data)
+
                         elif cmd == "ingame":
                             print("TODO: join game")
                         else:
@@ -103,13 +119,19 @@ class Main:
 
                         if cmd == node.HELLO:
                             print("Lobby/Game:", "Welcome", nick)
+                            # publish if main
+                            if not node.fork:
+                                node.publish()
 
                         elif (ev == node.LOBBY_GAME) and (cmd == node.OFFER):
-                            if not node.fork:
-                                print("forking to game offer", node.hint)
-                                node.sync_to(pid)
+                            if node.fork:
+                                print("cannot fork, already a clone/fork pid=", node.fork)
+                            elif len(node.pstree[node.pid]["forks"]):
+                                print("cannot fork, i'm main for", node.pstree[node.pid]["forks"])
                             else:
-                                print("cannot fork, already forked pid=", node.fork)
+                                print("forking to game offer", node.hint)
+                                node.clone(pid)
+
                         else:
                             print(f"\nLOBBY/GAME: {node.fork=} {node.proto=} {node.data=} {node.hint=}")
 
