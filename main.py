@@ -21,7 +21,7 @@ class Node(pygbag_net.Node):
     ...
 
 
-builtins.node = Node(gid=666, groupname="Simple Chess Board with spectators", offline="offline" in sys.argv)
+builtins.node = Node(gid=666, groupname="Simple Chess Board with active spectators", offline="offline" in sys.argv)
 
 
 class Main:

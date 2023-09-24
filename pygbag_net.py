@@ -14,6 +14,10 @@ import io, socket
 
 # TODO: use websockets module when on desktop to connect to service directly.
 
+# for now the goal is to connect directly without more dependency to
+# a mini irc included with pygbag python module that will capture all traffic
+# for local testing purpose.
+
 
 async def aio_sock_open(sock, host, port):
     print(f"20:aio_sock_open({host=},{port=}) {aio.cross.simulator=}")
@@ -496,8 +500,9 @@ class Node:
         if not current:
             self.pstree[self.pid]["forks"].append(cpid)
 
-        # TODO send expected rev number before flooding
+        # TODO send expected rev number before flooding + global checksum
         # TODO use a task to avoid flood
+        # TODO sign packets
         for idx, ser in enumerate(self.pstree[self.pid]["shm"], current):
             self.privmsg(cpid, self.B64JSON + ":" + base64.b64encode(ser.encode("ascii")).decode("utf-8"))
             node.pstree[cpid]["rev"] = idx
@@ -573,17 +578,7 @@ class Node:
             yield ev
 
 
-async def main():
-    global node
-    global data
-    data = {1: 2, "some": "data", "array": [1, 2, 3, "four"]}
-
-    node = Node()
-
-    while not aio.exit:
-        node.get_events()
-        await aio.sleep(0)
-
-
 if __name__ == "__main__":
+    from pygbag_net_minimal import main
+
     asyncio.run(main())

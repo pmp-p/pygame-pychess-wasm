@@ -6,10 +6,10 @@ from src.dragger import Dragger
 from src.config import Config
 from src.square import Square
 
-class Game:
 
+class Game:
     def __init__(self):
-        self.next_player = 'white'
+        self.next_player = "white"
         self.hovered_sqr = None
         self.board = Board()
         self.dragger = Dragger()
@@ -34,7 +34,7 @@ class Game:
                     # color
                     color = theme.bg.dark if row % 2 == 0 else theme.bg.light
                     # label
-                    lbl = self.config.font.render(str(ROWS-row), 1, color)
+                    lbl = self.config.font.render(str(ROWS - row), 1, color)
                     lbl_pos = (5, 5 + row * SQSIZE)
                     # blit
                     surface.blit(lbl, lbl_pos)
@@ -106,7 +106,7 @@ class Game:
     # other methods
 
     def next_turn(self):
-        self.next_player = 'white' if self.next_player == 'black' else 'black'
+        self.next_player = "white" if self.next_player == "black" else "black"
 
     def set_hover(self, row, col):
         self.hovered_sqr = self.board.squares[row][col]
